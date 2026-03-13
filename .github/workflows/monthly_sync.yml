@@ -2,14 +2,14 @@ name: Monthly Scheme Sync
 
 on:
   schedule:
-    - cron: "0 0 1 * *" # Midnight on the 1st
-  workflow_dispatch: # Allows you to click a button to run it manually
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial: gives the bot permission to push code
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,6 +31,11 @@ jobs:
         run: |
           git config --global user.name "SchemeBot"
           git config --global user.email "bot@github.com"
-          git add data/schemes/*.json
-          git commit -m "Auto-update schemes: $(date +'%Y-%m-%d')" || echo "No changes found"
-          git push
+          # Check if there are any changes in the data directory
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes found. Skipping commit."
+          else
+            git commit -m "Auto-update schemes: $(date +'%Y-%m-%d')"
+            git push
+          fi
