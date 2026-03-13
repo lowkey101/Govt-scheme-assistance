@@ -1,0 +1,36 @@
+name: Monthly Scheme Sync
+
+on:
+  schedule:
+    - cron: "0 0 1 * *" # Midnight on the 1st
+  workflow_dispatch: # Allows you to click a button to run it manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial: gives the bot permission to push code
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install playwright
+          playwright install chromium
+
+      - name: Run Scraper
+        run: python scrape_myscheme.py
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "SchemeBot"
+          git config --global user.email "bot@github.com"
+          git add data/schemes/*.json
+          git commit -m "Auto-update schemes: $(date +'%Y-%m-%d')" || echo "No changes found"
+          git push
