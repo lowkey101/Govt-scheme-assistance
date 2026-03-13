@@ -1,19 +1,27 @@
 import asyncio
 import json
 import os
+import random
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth # Corrected import
+import playwright_stealth
 
 async def scrape_myscheme():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        # 1. Launch with extra arguments to look less like a bot
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={'width': 1280, 'height': 720}
         )
         
         page = await context.new_page()
-        # Corrected: use 'stealth' directly on the page
-        await stealth(page)
+        
+        # 2. Fix the Stealth Import Call
+        await playwright_stealth.stealth_async(page)
         
         categories = ["Agriculture", "Education", "Health", "Social Welfare"]
         base_dir = "data/schemes"
@@ -23,24 +31,24 @@ async def scrape_myscheme():
             print(f"🔍 Checking Category: {cat}")
             try:
                 url = f"https://www.myscheme.gov.in/search/category/{cat}"
-                # Use a longer timeout for govt sites
-                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 
-                # Wait for the card or the link pattern
-                # Using a broader selector as backup
-                try:
-                    await page.wait_for_selector("a[href*='/schemes/']", timeout=20000)
-                except:
-                    print(f"⚠️ No schemes found in {cat} (possibly blocked or empty)")
-                    continue
-
+                # 3. Use 'networkidle' but with a longer timeout
+                await page.goto(url, wait_until="networkidle", timeout=90000)
+                
+                # 4. Human-like jitter: Scroll a bit to trigger JS loading
+                await page.mouse.wheel(0, random.randint(300, 700))
+                await asyncio.sleep(random.uniform(2, 4))
+                
+                # Try to find scheme links. myScheme links usually look like /schemes/name
+                await page.wait_for_selector("a[href*='/schemes/']", timeout=30000)
+                
                 links = await page.eval_on_selector_all("a[href*='/schemes/']", "elements => elements.map(e => e.href)")
-                links = list(set(links)) # Unique links only
+                links = list(set(links)) 
                 print(f"✅ Found {len(links)} schemes in {cat}")
 
                 for link in links[:5]:
-                    await page.goto(link, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(2) # Give JS time to render content
+                    await page.goto(link, wait_until="networkidle", timeout=60000)
+                    await asyncio.sleep(random.uniform(1, 3)) 
                     
                     title = await page.locator("h1").inner_text()
                     
@@ -53,15 +61,15 @@ async def scrape_myscheme():
                         "documents": await page.locator("#documents-required").inner_text() if await page.locator("#documents-required").count() else "N/A"
                     }
                     
-                    # Clean filename
                     safe_title = "".join(x for x in title if x.isalnum() or x==' ').strip()
                     filename = safe_title.lower().replace(" ", "_")[:30] + ".json"
                     
                     with open(os.path.join(base_dir, filename), "w", encoding="utf-8") as f:
                         json.dump(data, f, indent=4, ensure_ascii=False)
+                    print(f"💾 Saved: {filename}")
                         
             except Exception as e:
-                print(f"⚠️ Error in {cat}: {str(e)[:100]}")
+                print(f"⚠️ Error in {cat}: {str(e)[:150]}")
         
         await browser.close()
 
